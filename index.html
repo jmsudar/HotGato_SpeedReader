@@ -16,6 +16,7 @@
   <meta name="author" content="ZingLab LLC">
   <meta name="robots" content="index, follow">
   <meta name="googlebot" content="index, follow">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
 
 <body class="dark-theme">
@@ -26,10 +27,19 @@
     <h1 class="title">HotGato Speed&nbsp;Reader</h1>
 
     <div class="outputBlock">
+      <div class="pdfControls">
+        <label class="fileButton">Choose PDF
+          <input type="file" id="pdfFile" accept="application/pdf">
+        </label>
+        <span id="pdfStatus">No PDF loaded</span>
+      </div>
+      <div id="imageBanner" class="imageBanner" style="display:none"></div>
       <div id="textOutput" class="">
         <p id="outputText">Your text will appear here...</p>
       </div>
+      <div id="pauseInfo" class="pauseInfo" style="display:none"></div>
       <button id="startPause" type="button">GO!</button>
+      <p class="readerHint">Hold <kbd>Space</kbd> to read · <kbd>&larr;</kbd> rewind 100 words · <kbd>V</kbd> view page</p>
     </div>
     <div class="inputContainer">
       <div class="inputblock">
