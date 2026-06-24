@@ -34,7 +34,8 @@ let currentChunkIndex = 0;
 let currentWordIndex = 0;
 let currentPage = null;
 let lastBannerPage = null;      // page the image banner currently reflects (avoids per-tick DOM writes)
-let readingTimeout = null;
+let rafId = null;               // requestAnimationFrame handle for the reading loop
+let nextWordTime = 0;           // timestamp (ms) at which the next chunk should appear
 let spaceHeld = false;
 
 // Cached control values so the reading loop never reads the DOM per word
@@ -681,9 +682,9 @@ async function ensureContent() {
 }
 
 function stopTimer() {
-  if (readingTimeout) {
-    clearTimeout(readingTimeout);
-    readingTimeout = null;
+  if (rafId !== null) {
+    cancelAnimationFrame(rafId);
+    rafId = null;
   }
 }
 
@@ -710,19 +711,22 @@ function showChunk(index) {
   }
 }
 
-// The reading loop tick
-function tick() {
+// The reading loop, driven by requestAnimationFrame so word changes are synced to
+// the display refresh. Using a timestamp target (instead of setTimeout) avoids the
+// timer drift / sub-frame jitter that makes fast reading feel laggy.
+function tick(now) {
   if (!isReading) return;
-  if (currentChunkIndex >= chunks.length) {
-    finishReading();
-    return;
+  if (now >= nextWordTime) {
+    if (currentChunkIndex >= chunks.length) {
+      finishReading();
+      return;
+    }
+    showChunk(currentChunkIndex);
+    currentWordIndex = chunkStartWord[currentChunkIndex] + chunks[currentChunkIndex].length;
+    nextWordTime = now + chunkDelay(currentChunkIndex);
+    currentChunkIndex++;
   }
-  const chunk = chunks[currentChunkIndex];
-  showChunk(currentChunkIndex);
-  currentWordIndex = chunkStartWord[currentChunkIndex] + chunk.length;
-  const delay = chunkDelay(currentChunkIndex);
-  currentChunkIndex++;
-  readingTimeout = setTimeout(tick, delay);
+  rafId = requestAnimationFrame(tick);
 }
 
 function startPlayback() {
@@ -732,7 +736,8 @@ function startPlayback() {
   isPaused = false;
   startPauseButton.textContent = 'Pause';
   stopTimer();
-  tick();
+  nextWordTime = 0; // show the first chunk on the very next frame
+  rafId = requestAnimationFrame(tick);
 }
 
 // Used by the GO button (button needs to prepare content first)
@@ -765,7 +770,6 @@ function finishReading() {
 // Jump back roughly n words and show the landing chunk
 function rewindWords(n) {
   if (!chunks.length) return;
-  stopTimer();
   const target = Math.max(0, currentWordIndex - n);
   let idx = 0;
   while (idx < chunkStartWord.length - 1 && chunkStartWord[idx + 1] <= target) {
@@ -776,10 +780,10 @@ function rewindWords(n) {
   showChunk(idx);
 
   if (isReading) {
-    // resume the loop just past the chunk we just displayed
+    // advance past the shown chunk; the rAF loop (still running) continues from here
     currentWordIndex = chunkStartWord[idx] + chunks[idx].length;
     currentChunkIndex = idx + 1;
-    readingTimeout = setTimeout(tick, chunkDelay(idx));
+    nextWordTime = performance.now() + chunkDelay(idx);
   }
 }
 
@@ -846,14 +850,23 @@ function ensureModal() {
   closeBtn.textContent = '✕';
   closeBtn.addEventListener('click', closeModal);
 
+  // Page wrapper holds the canvas image and a transparent, selectable text layer
+  const wrap = document.createElement('div');
+  wrap.className = 'pdfPageWrap';
+
   const canvas = document.createElement('canvas');
   canvas.className = 'pdfModalCanvas';
+
+  const textLayer = document.createElement('div');
+  textLayer.className = 'textLayer';
 
   const caption = document.createElement('div');
   caption.className = 'pdfModalCaption';
 
+  wrap.appendChild(canvas);
+  wrap.appendChild(textLayer);
   content.appendChild(closeBtn);
-  content.appendChild(canvas);
+  content.appendChild(wrap);
   content.appendChild(caption);
   overlay.appendChild(content);
   document.body.appendChild(overlay);
@@ -865,7 +878,7 @@ function ensureModal() {
     if (e.key === 'Escape') closeModal();
   });
 
-  modalEls = { overlay, canvas, caption };
+  modalEls = { overlay, wrap, canvas, textLayer, caption };
   return modalEls;
 }
 
@@ -873,10 +886,11 @@ function closeModal() {
   if (modalEls) modalEls.overlay.style.display = 'none';
 }
 
-// Render a full PDF page to a canvas in a modal/lightbox
+// Render a full PDF page into the lightbox: a crisp (device-pixel-ratio) canvas
+// image plus a transparent text layer overlay so the text can be selected/copied.
 async function renderPageModal(pageNum, caption) {
   if (!pdfDoc || !pageNum) return;
-  const { overlay, canvas, caption: captionEl } = ensureModal();
+  const { overlay, wrap, canvas, textLayer, caption: captionEl } = ensureModal();
 
   // Cancel any render still in flight and wait for pdf.js to release the canvas
   // before starting a new one, otherwise it throws "same canvas" mid-render.
@@ -891,19 +905,45 @@ async function renderPageModal(pageNum, caption) {
   try {
     const page = await pdfDoc.getPage(pageNum);
     const base = page.getViewport({ scale: 1 });
-    const maxW = Math.min(window.innerWidth * 0.9, 900);
-    const maxH = window.innerHeight * 0.82;
-    const scale = Math.min(maxW / base.width, maxH / base.height);
-    const viewport = page.getViewport({ scale });
+    const maxW = Math.min(window.innerWidth * 0.92, 1400);
+    const maxH = window.innerHeight * 0.85;
+    const cssScale = Math.min(maxW / base.width, maxH / base.height);
+    const dpr = window.devicePixelRatio || 1;
 
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
+    // Display size (CSS px) vs backing-store size (CSS px * DPR) for sharpness
+    const cssViewport = page.getViewport({ scale: cssScale });
+    const renderViewport = page.getViewport({ scale: cssScale * dpr });
+
+    wrap.style.width = cssViewport.width + 'px';
+    wrap.style.height = cssViewport.height + 'px';
+    canvas.width = Math.floor(renderViewport.width);
+    canvas.height = Math.floor(renderViewport.height);
+    canvas.style.width = cssViewport.width + 'px';
+    canvas.style.height = cssViewport.height + 'px';
+
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    currentRenderTask = page.render({ canvasContext: ctx, viewport });
+    currentRenderTask = page.render({ canvasContext: ctx, viewport: renderViewport });
     await currentRenderTask.promise;
     currentRenderTask = null;
+
+    // Selectable text overlay, sized to the CSS viewport
+    textLayer.innerHTML = '';
+    textLayer.style.width = cssViewport.width + 'px';
+    textLayer.style.height = cssViewport.height + 'px';
+    textLayer.style.setProperty('--scale-factor', cssScale);
+    try {
+      const textContent = await page.getTextContent();
+      await pdfjsLib.renderTextLayer({
+        textContentSource: textContent,
+        container: textLayer,
+        viewport: cssViewport,
+        textDivs: []
+      }).promise;
+    } catch (textErr) {
+      console.warn('Text layer unavailable for page', pageNum, textErr);
+    }
 
     captionEl.textContent = caption || `Page ${pageNum}`;
     overlay.style.display = 'flex';

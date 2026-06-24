@@ -390,11 +390,43 @@ label.fileButton input[type="file"] {
   text-align: center;
 }
 
+.pdfPageWrap {
+  position: relative;
+  margin: 0 auto;
+  max-width: 100%;
+}
+
 .pdfModalCanvas {
   display: block;
   margin: 0 auto;
   max-width: 100%;
   height: auto;
+}
+
+/* Transparent, selectable text overlay aligned to the canvas (pdf.js text layer) */
+.pdfPageWrap .textLayer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: hidden;
+  line-height: 1;
+  opacity: 1;
+}
+
+.pdfPageWrap .textLayer > span {
+  position: absolute;
+  white-space: pre;
+  transform-origin: 0 0;
+  color: transparent;
+  cursor: text;
+}
+
+.pdfPageWrap .textLayer ::selection {
+  background: rgba(80, 150, 255, 0.4);
+}
+
+.pdfPageWrap .textLayer span::selection {
+  background: rgba(80, 150, 255, 0.4);
 }
 
 .pdfModalCaption {

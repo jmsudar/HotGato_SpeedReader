@@ -36,7 +36,7 @@ The speed reader is designed to assist users in rapidly reading and comprehendin
     * Load a PDF straight into the reader with the **Choose PDF** button — everything is parsed in the browser, so files never leave your machine. Parsing uses heuristics to strip noise (footnotes, tables of contents, running headers/footers, and figure/table captions) so you read the body text, not the clutter.
 
 11. **Image Awareness:**
-    * When a page contains images, a banner appears above the reader. Click it (or press **V**) to render that full PDF page in a pop-up so you can see what the parser skipped over.
+    * When a page contains images, a banner appears above the reader. Click it (or press **V**) to render that full PDF page in a high-resolution pop-up so you can see what the parser skipped over. The page text is overlaid as a selectable layer, so you can highlight and copy directly from the pop-up.
 
 12. **Hold-to-Read, Rewind, and Progress:**
     * Hold the **Spacebar** to read and release to pause. On pause you get a progress readout (percent through the book plus the current page) and a render of the page you're on. Press the **Left Arrow** to jump back ~100 words.
