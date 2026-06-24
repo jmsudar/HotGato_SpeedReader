@@ -1,0 +1,30 @@
+{
+  "name": "hotgato_speedreader",
+  "version": "1.0.0",
+  "description": "Speed Reader for ADHD for rapid serial visual presentation (RSVP)",
+  "main": "core.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "ts-node"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jmsudar/HotGato_SpeedReader.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/jmsudar/HotGato_SpeedReader/issues"
+  },
+  "homepage": "https://github.com/jmsudar/HotGato_SpeedReader#readme",
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@types/pdf-parse": "^1.1.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "pdf-parse": "^2.4.5"
+  }
+}

@@ -32,6 +32,53 @@ The speed reader is designed to assist users in rapidly reading and comprehendin
 9. **Sentence Awareness:**
    * The application is smart enough to recognize when a chunk would split a sentence in a way that disrupts comprehension, adjusting the chunk to preserve the sentence's integrity.
 
+10. **PDF Reading (client-side):**
+    * Load a PDF straight into the reader with the **Choose PDF** button — everything is parsed in the browser, so files never leave your machine. Parsing uses heuristics to strip noise (footnotes, tables of contents, running headers/footers, and figure/table captions) so you read the body text, not the clutter.
+
+11. **Image Awareness:**
+    * When a page contains images, a banner appears above the reader. Click it (or press **V**) to render that full PDF page in a high-resolution pop-up so you can see what the parser skipped over. The page text is overlaid as a selectable layer, so you can highlight and copy directly from the pop-up.
+
+12. **Hold-to-Read, Rewind, and Progress:**
+    * Hold the **Spacebar** to read and release to pause. On pause you get a progress readout (percent through the book plus the current page) and a render of the page you're on. Press the **Left Arrow** to jump back ~100 words.
+
 ### Appeal to Users:
 
 Given the rise in information consumption, tools like this speed reader become essential for many who are looking to consume vast amounts of text in shorter periods. The combination of user customization and smart text handling ensures an optimal and flexible reading experience. Whether someone is studying for an exam, going through a report, or just reading for leisure, this tool can enhance their efficiency and comprehension.
+
+## Usage
+
+### Launching the app
+
+The reader is a static, fully client-side web app — no build step and no server-side code. PDF parsing happens entirely in your browser via [pdf.js](https://mozilla.github.io/pdf.js/).
+
+Because PDF loading uses `fetch`, you need to serve the files over HTTP rather than opening `index.html` from the filesystem (`file://`). From the project root:
+
+```bash
+# Python (no install needed on most systems)
+python3 -m http.server 8000
+```
+
+Then open <http://localhost:8000> in your browser. Any static file server works (e.g. `npx serve`).
+
+On startup the app loads the bundled `test.pdf`; use the **Choose PDF** button to read your own file.
+
+### Reading a document
+
+1. Click **Choose PDF** and pick a local PDF (or paste text into the text box for a quick read).
+2. Adjust **Reading Speed**, **Chunk Size**, **Punctuation Pause**, **Font Size**, and **Font Family** to taste — your settings are remembered between sessions.
+3. Read using either control scheme below.
+
+### Keyboard controls
+
+| Key | Action |
+| --- | --- |
+| **Hold Space** | Read while held; release to pause |
+| **Left Arrow** | Jump back ~100 words |
+| **V** | View the current PDF page in a pop-up |
+| **Esc** | Close the page pop-up |
+
+The **GO! / Pause** button toggles reading as an alternative to holding Space. When you pause, you'll see your progress (percent and page number) and a render of the current page.
+
+### Tuning the PDF parser
+
+PDF parsing is heuristic. If too much or too little is stripped for your documents, edit the `PARSE_CONFIG` object near the top of [`core.js`](core.js) — it toggles each filter (footnotes, headers/footers, TOC pages, captions, and front matter) and exposes the thresholds. The `skipFrontMatter` filter drops praise/blurb, title, copyright, dedication, and author-bio pages near the start so reading begins at the real content (e.g. the foreword/preface). The parser logs a summary of what it kept, dropped, and the page it started on to the browser console.

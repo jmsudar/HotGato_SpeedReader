@@ -304,6 +304,148 @@ a.buttonLink {
   color: inherit;
 }
 
+/* PDF controls + reader feedback */
+.pdfControls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+label.fileButton {
+  display: inline-block;
+  position: static;
+  margin: 0;
+  padding: 0.5em 1.2em;
+  background: linear-gradient(45deg, var(--atomic-tangerine), orangered);
+  color: white;
+  font-weight: bold;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+label.fileButton input[type="file"] {
+  display: none;
+}
+
+#pdfStatus {
+  font-size: 0.9em;
+  opacity: 0.8;
+}
+
+.imageBanner {
+  margin: 12px auto 0;
+  padding: 10px 14px;
+  max-width: 100%;
+  background-color: var(--peach-yellow);
+  color: var(--dark);
+  border-radius: 8px;
+  text-align: center;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.pauseInfo {
+  margin: 12px auto 0;
+  text-align: center;
+  font-size: 1.1em;
+  font-weight: bold;
+  color: var(--atomic-tangerine);
+}
+
+.readerHint {
+  text-align: center;
+  font-size: 0.85em;
+  opacity: 0.7;
+}
+
+.readerHint kbd {
+  font-family: monospace;
+  background: rgba(128, 128, 128, 0.25);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+/* Full-page PDF render modal */
+.pdfModal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.75);
+  align-items: center;
+  justify-content: center;
+}
+
+.pdfModalContent {
+  position: relative;
+  background: #fff;
+  padding: 12px;
+  border-radius: 8px;
+  max-width: 95vw;
+  max-height: 95vh;
+  overflow: auto;
+  text-align: center;
+}
+
+.pdfPageWrap {
+  position: relative;
+  margin: 0 auto;
+  max-width: 100%;
+}
+
+.pdfModalCanvas {
+  display: block;
+  margin: 0 auto;
+  max-width: 100%;
+  height: auto;
+}
+
+/* Transparent, selectable text overlay aligned to the canvas (pdf.js text layer) */
+.pdfPageWrap .textLayer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: hidden;
+  line-height: 1;
+  opacity: 1;
+}
+
+.pdfPageWrap .textLayer > span {
+  position: absolute;
+  white-space: pre;
+  transform-origin: 0 0;
+  color: transparent;
+  cursor: text;
+}
+
+.pdfPageWrap .textLayer ::selection {
+  background: rgba(80, 150, 255, 0.4);
+}
+
+.pdfPageWrap .textLayer span::selection {
+  background: rgba(80, 150, 255, 0.4);
+}
+
+.pdfModalCaption {
+  margin-top: 8px;
+  color: var(--dark);
+  font-weight: bold;
+}
+
+.pdfModalClose {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  margin: 0;
+  padding: 0.2em 0.6em;
+  font-size: 1em;
+  line-height: 1.2;
+  border-radius: 6px;
+}
+
 .container {
   display: flex;
   flex-direction: row;
