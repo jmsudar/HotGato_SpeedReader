@@ -41,6 +41,9 @@ The speed reader is designed to assist users in rapidly reading and comprehendin
 12. **Hold-to-Read, Rewind, and Progress:**
     * Hold the **Spacebar** to read and release to pause. On pause you get a progress readout (percent through the book plus the current page) and a render of the page you're on. Press the **Left Arrow** to jump back ~100 words.
 
+13. **One Page at a Time:**
+    * Tick **One page at a time** to read the document page by page instead of straight through. Each page is read as a whole thought: playback starts at the beginning of the sentence sitting at the top of the page (backing into the previous page when that sentence started there) and runs to the end of the last sentence the page begins (carrying on into the next page to finish it). Reading stops on its own at the page boundary and the full page render pops up, ready to copy from or screenshot. Press **Space** again for the next page.
+
 ### Appeal to Users:
 
 Given the rise in information consumption, tools like this speed reader become essential for many who are looking to consume vast amounts of text in shorter periods. The combination of user customization and smart text handling ensures an optimal and flexible reading experience. Whether someone is studying for an exam, going through a report, or just reading for leisure, this tool can enhance their efficiency and comprehension.
@@ -72,12 +75,27 @@ On startup the app loads the bundled `test.pdf`; use the **Choose PDF** button t
 
 | Key | Action |
 | --- | --- |
-| **Hold Space** | Read while held; release to pause |
+| **Hold Space** | Read while held; release to pause. In page mode, reads one page then stops |
 | **Left Arrow** | Jump back ~100 words |
 | **V** | View the current PDF page in a pop-up |
 | **Esc** | Close the page pop-up |
 
 The **GO! / Pause** button toggles reading as an alternative to holding Space. When you pause, you'll see your progress (percent and page number) and a render of the current page.
+
+### One page at a time
+
+Tick the **One page at a time** checkbox next to the **Choose PDF** button to switch from continuous reading to page-by-page reading. The setting is remembered between sessions and applies to PDFs only (pasted text has no pages, so the reader stays continuous).
+
+In this mode the document is cut into one segment per page, and each segment is expanded outward to whole sentences:
+
+* It **starts** at the first word of the sentence at the top of the page — if that sentence began on the previous page, playback backs up and starts there.
+* It **ends** at the end of the last sentence the page begins — if that sentence finishes on the next page, playback carries on to finish it.
+
+A sentence straddling a page break is therefore read twice, once as the tail of one page and once as the head of the next, which is what keeps each page a self-contained read.
+
+Reading stops on its own when it reaches the end of the page, even if you're still holding Space, and the full page render opens so you can select, copy, or screenshot it. Press **Space** again to move to the next page. If you let go partway through a page, the reader stays put and the next press picks up where you left off rather than skipping the rest of the page.
+
+Sentence detection is heuristic — it deliberately treats an ambiguous period (abbreviations like `Mr.`, initials like `J.`, list numbers like `1.`, or a lowercase word following) as *not* ending a sentence. On a page with no sentence punctuation at all (a table, a poem), the search gives up after `MAX_SENTENCE_SCAN` words so a single page can't drag in half the document.
 
 ### Tuning the PDF parser
 

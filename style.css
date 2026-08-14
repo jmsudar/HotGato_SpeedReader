@@ -335,6 +335,26 @@ label.fileButton input[type="file"] {
   opacity: 0.8;
 }
 
+/* Inline checkbox control; overrides the absolutely positioned default label */
+label.toggleControl {
+  display: inline-flex;
+  align-items: center;
+  position: static;
+  gap: 6px;
+  margin: 0;
+  font-size: 0.9em;
+  cursor: pointer;
+  user-select: none;
+}
+
+label.toggleControl input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--atomic-tangerine);
+  cursor: pointer;
+}
+
 .imageBanner {
   margin: 12px auto 0;
   padding: 10px 14px;
