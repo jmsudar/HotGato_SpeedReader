@@ -32,6 +32,11 @@
           <input type="file" id="pdfFile" accept="application/pdf">
         </label>
         <span id="pdfStatus">No PDF loaded</span>
+        <label class="toggleControl" for="pageMode"
+          title="Read one page at a time: starts at the top-of-page sentence, finishes the last sentence on the page, then shows the page.">
+          <input type="checkbox" id="pageMode">
+          One page at a time
+        </label>
       </div>
       <div id="imageBanner" class="imageBanner" style="display:none"></div>
       <div id="textOutput" class="">
@@ -39,7 +44,7 @@
       </div>
       <div id="pauseInfo" class="pauseInfo" style="display:none"></div>
       <button id="startPause" type="button">GO!</button>
-      <p class="readerHint">Hold <kbd>Space</kbd> to read · <kbd>&larr;</kbd> rewind 100 words · <kbd>V</kbd> view page</p>
+      <p id="readerHint" class="readerHint">Hold <kbd>Space</kbd> to read · <kbd>&larr;</kbd> rewind 100 words · <kbd>V</kbd> view page</p>
     </div>
     <div class="inputContainer">
       <div class="inputblock">

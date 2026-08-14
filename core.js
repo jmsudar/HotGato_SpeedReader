@@ -11,13 +11,14 @@ let pdfFileInput;
 let pdfStatus;
 let imageBanner;
 let pauseInfo;
+let pageModeToggle;
 let isReading = false;
 var isPaused = false;
 var userInteracted = false;
 
 // Prepared-document state (filled once per loaded PDF / text, reused for playback)
 let pdfDoc = null;              // live pdf.js document, kept for page rendering
-let documentWords = [];         // ordered [{ text, page }] after filtering
+let sourceWords = [];           // extracted words as-is, before any page-mode expansion
 let chunks = [];                // [[{text,page}, ...], ...]
 let chunkTexts = [];            // pre-joined display string per chunk (no per-tick work)
 let chunkWordLists = [];        // pre-split word strings per chunk (for Bionic display)
@@ -28,6 +29,13 @@ let totalWords = 0;
 let numPages = 0;
 let pageImageCounts = {};       // { pageNum: imageCount }
 let documentReady = false;
+
+// Page-at-a-time mode: playback is cut into one segment per page, each starting at
+// the top-of-page sentence and running to the end of the last sentence on the page.
+let pageMode = false;
+let pageSegments = [];          // [{ page, startChunk, endChunk }] (endChunk inclusive)
+let currentSegmentIndex = 0;
+let segmentComplete = false;    // this page is read out; the next Space moves on
 
 // Playback position
 let currentChunkIndex = 0;
@@ -112,6 +120,9 @@ function initializeSettings() {
   textOutputElement.className = '';
   textOutputElement.classList.add('body-' + DEFAULT_VALUES.fontFamily);
 
+  pageMode = false;
+  if (pageModeToggle) pageModeToggle.checked = false;
+
   // Then try to load from localStorage
   try {
     const storedSpeed = localStorage.getItem('speedSelector');
@@ -145,6 +156,9 @@ function initializeSettings() {
       textOutputElement.className = '';
       textOutputElement.classList.add('body-' + storedFontFamily);
     }
+
+    pageMode = localStorage.getItem('pageMode') === '1';
+    if (pageModeToggle) pageModeToggle.checked = pageMode;
   } catch (e) {
     console.error("Error loading settings from localStorage:", e);
   }
@@ -152,6 +166,16 @@ function initializeSettings() {
   // Seed the cached control values from the (possibly restored) inputs
   currentSpeed = parseInt(speedSelector.value) || DEFAULT_VALUES.speed;
   currentPauseFactor = parseFloat(pauseSpeedSelector.value) || DEFAULT_VALUES.pauseSpeed;
+  updateReaderHint();
+}
+
+// The keyboard hint under the reader changes shape in page mode
+function updateReaderHint() {
+  const hint = document.getElementById('readerHint');
+  if (!hint) return;
+  hint.innerHTML = pageMode
+    ? 'Hold <kbd>Space</kbd> to read a page · let go for the page image · <kbd>Space</kbd> again for the next page'
+    : 'Hold <kbd>Space</kbd> to read · <kbd>&larr;</kbd> rewind 100 words · <kbd>V</kbd> view page';
 }
 
 // Set up event listeners for controls
@@ -174,11 +198,29 @@ function setupEventListeners() {
   chunkSelector.addEventListener('input', function() {
     updateUIElement('chunkValue', this.value);
     localStorage.setItem('chunkSize', this.value);
-    if (documentWords.length) {
-      rebuildChunks(documentWords);
+    if (sourceWords.length) {
+      rebuildPlayback();
       resetPosition();
     }
   });
+
+  // Page-at-a-time toggle - re-cuts the document into per-page segments
+  if (pageModeToggle) {
+    pageModeToggle.addEventListener('change', function() {
+      pageMode = this.checked;
+      localStorage.setItem('pageMode', pageMode ? '1' : '0');
+      rebuildPlayback();
+      resetPosition();
+      updateReaderHint();
+    });
+
+    // A mouse click would otherwise leave the checkbox focused, where the next
+    // Space toggles it back off instead of reading. Keyboard clicks (detail 0)
+    // keep focus so the toggle stays operable from the keyboard.
+    pageModeToggle.addEventListener('click', function(event) {
+      if (event.detail > 0) this.blur();
+    });
+  }
 
   // Font size selector
   fontSizeSelector.addEventListener('input', function() {
@@ -267,6 +309,10 @@ async function onKeyDown(event) {
       return;
     }
     if (spaceHeld && !isReading) {
+      // A page that read all the way through hands off to the next one. Letting go
+      // part way through a page instead resumes where you stopped, so an early
+      // release never skips text you haven't heard yet.
+      if (inPageMode() && segmentComplete) advanceSegment();
       startPlayback();
     }
     return;
@@ -304,6 +350,7 @@ document.addEventListener('DOMContentLoaded', (event) => {
   pdfStatus = document.getElementById('pdfStatus');
   imageBanner = document.getElementById('imageBanner');
   pauseInfo = document.getElementById('pauseInfo');
+  pageModeToggle = document.getElementById('pageMode');
 
   if (!textInput || !speedSelector || !pauseSpeedSelector || !chunkSelector ||
       !fontSizeSelector || !fontFamilySelector || !startPauseButton || !textOutput) {
@@ -346,21 +393,35 @@ function textToWords(text) {
 
 // Group ordered word objects into chunks, ending a chunk early on a
 // sentence-final word so chunks don't straddle sentence boundaries.
-function buildChunks(words, chunkSize) {
+// `breaks` (optional) is a Set of word indices where a chunk must start, used by
+// page mode so no chunk straddles a page segment.
+function buildChunks(words, chunkSize, breaks) {
   const result = [];
   let i = 0;
   while (i < words.length) {
-    let chunkEnd = i + chunkSize;
+    let chunkEnd = Math.min(i + chunkSize, words.length);
 
-    if (!(chunkEnd <= words.length && /[.!?]$/.test(words[chunkEnd - 1]?.text || ''))) {
-      const slice = words.slice(i, i + chunkSize);
+    if (breaks) {
+      for (let j = i + 1; j < chunkEnd; j++) {
+        if (breaks.has(j)) {
+          chunkEnd = j;
+          break;
+        }
+      }
+    }
+
+    // A chunk that runs its full length and lands on a sentence-final word needs
+    // no trimming; anything shorter (end of document, or a hard break) is rescanned.
+    const isFullSize = chunkEnd === i + chunkSize;
+    if (!(isFullSize && /[.!?]$/.test(words[chunkEnd - 1]?.text || ''))) {
+      const slice = words.slice(i, chunkEnd);
       const nextPunctuationIndex = slice.findIndex((w) => /[.!?]$/.test(w.text));
-      if (nextPunctuationIndex !== -1 && nextPunctuationIndex < chunkSize) {
+      if (nextPunctuationIndex !== -1) {
         chunkEnd = i + nextPunctuationIndex + 1;
       }
     }
 
-    const chunk = words.slice(i, Math.min(chunkEnd, words.length));
+    const chunk = words.slice(i, chunkEnd);
     if (!chunk.length) break;
     result.push(chunk);
     i += chunk.length;
@@ -368,13 +429,106 @@ function buildChunks(words, chunkSize) {
   return result;
 }
 
+// Words ending in a period that usually aren't ending a sentence
+const ABBREVIATIONS = new Set([
+  'mr', 'mrs', 'ms', 'dr', 'prof', 'sr', 'jr', 'st', 'mt', 'rev', 'hon', 'gen', 'col', 'lt', 'sgt', 'capt',
+  'vs', 'etc', 'al', 'ca', 'cf', 'eg', 'ie', 'inc', 'ltd', 'co', 'corp', 'dept', 'est',
+  'fig', 'figs', 'no', 'nos', 'vol', 'vols', 'ch', 'chap', 'pp', 'ed', 'eds', 'trans', 'approx',
+  'jan', 'feb', 'mar', 'apr', 'jun', 'jul', 'aug', 'sep', 'sept', 'oct', 'nov', 'dec'
+]);
+
+// Give up looking for a sentence boundary after this many words, so a page of
+// punctuation-free text (a table, a poem) can't drag in half the document.
+const MAX_SENTENCE_SCAN = 250;
+
+// Heuristic sentence-boundary test over the token stream. pdf.js hands us words,
+// not sentences, so this stays conservative: when a period is ambiguous (an
+// abbreviation, an initial, a list number, a lowercase word next) we treat the
+// sentence as continuing.
+function isSentenceEnd(token, nextToken) {
+  if (!token) return false;
+  const trimmed = token.replace(/[)\]}"'”’»]+$/, ''); // closing quotes/brackets ride along
+  if (!/[.!?]$/.test(trimmed)) return false;
+  if (/[!?]$/.test(trimmed)) return true;
+
+  const body = trimmed.slice(0, -1);
+  if (/^[A-Z]$/.test(body)) return false;                 // an initial, e.g. "J."
+  if (/^\d+$/.test(body)) return false;                   // a list number, e.g. "1."
+  if (/^([A-Za-z]\.)+[A-Za-z]$/.test(body)) return false; // "e.g." / "U.S."
+  if (ABBREVIATIONS.has(body.toLowerCase().replace(/[^a-z]/g, ''))) return false;
+  if (nextToken && /^[a-z]/.test(nextToken)) return false; // the sentence clearly runs on
+  return true;
+}
+
+// Cut the word stream into one segment per page. A segment starts at the first
+// word of the sentence that opens the page (reaching back into the previous page
+// when that sentence started there) and ends at the end of the last sentence the
+// page begins (reaching forward into the next page to finish it). Sentences that
+// straddle a page boundary therefore appear in both neighbouring segments, so the
+// words are re-emitted into a new array rather than indexed in place.
+function buildPageSegments(words) {
+  // Page runs are contiguous: extraction walks the document page by page.
+  const runs = [];
+  for (let i = 0; i < words.length; i++) {
+    const last = runs[runs.length - 1];
+    if (last && last.page === words[i].page) {
+      last.end = i;
+    } else {
+      runs.push({ page: words[i].page, start: i, end: i });
+    }
+  }
+
+  const expanded = [];
+  const segments = [];
+  for (const run of runs) {
+    let start = run.start;
+    const backStop = Math.max(0, run.start - MAX_SENTENCE_SCAN);
+    while (start > backStop && !isSentenceEnd(words[start - 1].text, words[start].text)) {
+      start--;
+    }
+
+    let end = run.end;
+    const forwardStop = Math.min(words.length - 1, run.end + MAX_SENTENCE_SCAN);
+    while (end < forwardStop && !isSentenceEnd(words[end].text, words[end + 1].text)) {
+      end++;
+    }
+
+    const startWord = expanded.length;
+    for (let i = start; i <= end; i++) {
+      // Stamp every word with the segment's page so the banner and the lightbox
+      // follow the page being read, not the page a borrowed sentence came from.
+      expanded.push({ text: words[i].text, page: run.page });
+    }
+    segments.push({ page: run.page, startWord, endWord: expanded.length });
+  }
+
+  return { words: expanded, segments };
+}
+
+// Translate segment word ranges into chunk ranges. Every segment boundary was fed
+// to buildChunks as a hard break, so each one lands exactly on a chunk start.
+function mapSegmentsToChunks(segments) {
+  const chunkAtWord = new Map();
+  for (let i = 0; i < chunkStartWord.length; i++) {
+    chunkAtWord.set(chunkStartWord[i], i);
+  }
+
+  const mapped = [];
+  for (const segment of segments) {
+    const startChunk = chunkAtWord.get(segment.startWord);
+    if (startChunk === undefined) continue;
+    const nextChunk = chunkAtWord.has(segment.endWord) ? chunkAtWord.get(segment.endWord) : chunks.length;
+    mapped.push({ page: segment.page, startChunk, endChunk: nextChunk - 1 });
+  }
+  return mapped;
+}
+
 // Rebuild chunks + derived indices from a flat word array. Everything the
 // per-word reading loop needs (display text, word lists, pause flag, page) is
 // computed once here so playback does no string/regex work per tick.
-function rebuildChunks(words) {
-  documentWords = words;
+function rebuildChunks(words, breaks) {
   const chunkSize = parseInt(chunkSelector.value) || 1;
-  chunks = buildChunks(words, chunkSize);
+  chunks = buildChunks(words, chunkSize, breaks);
   chunkTexts = [];
   chunkWordLists = [];
   chunkSpecial = [];
@@ -394,12 +548,34 @@ function rebuildChunks(words) {
   totalWords = running;
 }
 
+// Turn the extracted words into the playback stream, applying page mode if it is
+// on and the source actually has pages (pasted text doesn't).
+function rebuildPlayback() {
+  if (!sourceWords.length) return;
+
+  if (pageMode && sourceWords.some((w) => w.page != null)) {
+    const { words, segments } = buildPageSegments(sourceWords);
+    rebuildChunks(words, new Set(segments.map((s) => s.startWord)));
+    pageSegments = mapSegmentsToChunks(segments);
+  } else {
+    rebuildChunks(sourceWords, null);
+    pageSegments = [];
+  }
+}
+
+// Page mode is active only when we actually managed to cut the document into pages
+function inPageMode() {
+  return pageMode && pageSegments.length > 0;
+}
+
 function resetPosition() {
   stopTimer();
   isReading = false;
   isPaused = false;
   currentChunkIndex = 0;
   currentWordIndex = 0;
+  currentSegmentIndex = 0;
+  segmentComplete = false;
   lastBannerPage = null;
   if (startPauseButton) startPauseButton.textContent = 'GO!';
   hidePauseInfo();
@@ -648,7 +824,8 @@ async function prepareDocumentFromSource(source, label) {
 
   const { words, pageImageCounts: counts } = await extractStructuredPDF(doc);
   pageImageCounts = counts;
-  rebuildChunks(words);
+  sourceWords = words;
+  rebuildPlayback();
   resetPosition();
   documentReady = true;
 
@@ -670,7 +847,8 @@ async function ensureContent() {
     pdfDoc = null;
     numPages = 0;
     pageImageCounts = {};
-    rebuildChunks(textToWords(text));
+    sourceWords = textToWords(text);
+    rebuildPlayback();
     resetPosition();
     documentReady = true;
     userInteracted = false;
@@ -717,6 +895,16 @@ function showChunk(index) {
 function tick(now) {
   if (!isReading) return;
   if (now >= nextWordTime) {
+    // In page mode, stop at the page boundary even if Space is still held. The
+    // check happens here (rather than right after the last chunk is drawn) so the
+    // final chunk of the page gets its full display time first.
+    if (inPageMode()) {
+      const segment = pageSegments[currentSegmentIndex];
+      if (segment && currentChunkIndex > segment.endChunk) {
+        finishSegment();
+        return;
+      }
+    }
     if (currentChunkIndex >= chunks.length) {
       finishReading();
       return;
@@ -747,6 +935,7 @@ async function startReading() {
     textOutput.textContent = 'Please choose a PDF or enter text.';
     return;
   }
+  if (inPageMode() && segmentComplete) advanceSegment();
   startPlayback();
 }
 
@@ -765,6 +954,39 @@ function finishReading() {
   startPauseButton.textContent = 'GO!';
   currentChunkIndex = 0;
   currentWordIndex = 0;
+  currentSegmentIndex = 0;
+  segmentComplete = false;
+}
+
+// Reached the end of a page in page mode: park here and show the page image
+function finishSegment() {
+  isReading = false;
+  isPaused = true;
+  segmentComplete = true;
+  stopTimer();
+  startPauseButton.textContent = 'Next page';
+  showPauseView();
+}
+
+function jumpToSegment(index) {
+  currentSegmentIndex = index;
+  segmentComplete = false;
+  const segment = pageSegments[index];
+  currentChunkIndex = segment.startChunk;
+  currentWordIndex = chunkStartWord[segment.startChunk];
+}
+
+// Move on after a finished page, wrapping back to the first page at the end
+function advanceSegment() {
+  const next = currentSegmentIndex + 1;
+  jumpToSegment(next < pageSegments.length ? next : 0);
+}
+
+function segmentIndexForChunk(chunkIndex) {
+  for (let i = 0; i < pageSegments.length; i++) {
+    if (chunkIndex <= pageSegments[i].endChunk) return i;
+  }
+  return Math.max(0, pageSegments.length - 1);
 }
 
 // Jump back roughly n words and show the landing chunk
@@ -778,6 +1000,12 @@ function rewindWords(n) {
   currentChunkIndex = idx;
   currentWordIndex = chunkStartWord[idx];
   showChunk(idx);
+
+  // Rewinding can cross back into an earlier page; follow it there
+  if (inPageMode()) {
+    currentSegmentIndex = segmentIndexForChunk(idx);
+    segmentComplete = false;
+  }
 
   if (isReading) {
     // advance past the shown chunk; the rAF loop (still running) continues from here
@@ -795,14 +1023,21 @@ function progressPercent() {
 // Show where we are on pause: progress readout + (if a PDF) the real page
 function showPauseView() {
   const percent = progressPercent();
+  let label;
+  if (segmentComplete && currentPage) {
+    label = `End of page ${currentPage} of ${numPages} · Space for the next page`;
+  } else if (currentPage) {
+    label = `${percent}% · page ${currentPage} of ${numPages}`;
+  } else {
+    label = `${percent}% read`;
+  }
+
   if (pauseInfo) {
-    pauseInfo.textContent = currentPage
-      ? `${percent}% · page ${currentPage} of ${numPages}`
-      : `${percent}% read`;
+    pauseInfo.textContent = label;
     pauseInfo.style.display = 'block';
   }
   if (pdfDoc && currentPage) {
-    renderPageModal(currentPage, `${percent}% · page ${currentPage} of ${numPages}`);
+    renderPageModal(currentPage, label);
   }
 }
 

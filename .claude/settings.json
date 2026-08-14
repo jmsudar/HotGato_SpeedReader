@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node test-segments.js)",
+      "Bash(node --check core.js)",
+      "Bash(sed -i '' 's/, documentWords }\\);/ }\\);/' /private/tmp/claude-502/-Users-sudar-Dropbox-Programming-HotGato-SpeedReader/2a685497-1d18-4b4a-8bb4-98710b455857/scratchpad/test-segments.js)",
+      "Bash(node /private/tmp/claude-502/-Users-sudar-Dropbox-Programming-HotGato-SpeedReader/2a685497-1d18-4b4a-8bb4-98710b455857/scratchpad/test-segments.js)",
+      "Bash(node /private/tmp/claude-502/-Users-sudar-Dropbox-Programming-HotGato-SpeedReader/2a685497-1d18-4b4a-8bb4-98710b455857/scratchpad/test-playback.js)",
+      "Bash(node /private/tmp/claude-502/-Users-sudar-Dropbox-Programming-HotGato-SpeedReader/2a685497-1d18-4b4a-8bb4-98710b455857/scratchpad/test-parity.js)",
+      "Bash(node test-playback.js)",
+      "Bash(node -e ' *)"
+    ]
+  }
+}
