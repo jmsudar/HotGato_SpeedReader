@@ -35,14 +35,17 @@ The speed reader is designed to assist users in rapidly reading and comprehendin
 10. **PDF Reading (client-side):**
     * Load a PDF straight into the reader with the **Choose PDF** button — everything is parsed in the browser, so files never leave your machine. Parsing uses heuristics to strip noise (footnotes, tables of contents, running headers/footers, and figure/table captions) so you read the body text, not the clutter.
 
-11. **Image Awareness:**
-    * When a page contains images, a banner appears above the reader. Click it (or press **V**) to render that full PDF page in a high-resolution pop-up so you can see what the parser skipped over. The page text is overlaid as a selectable layer, so you can highlight and copy directly from the pop-up.
+11. **Image and Code Awareness:**
+    * When a page contains images or code blocks, a banner appears above the reader. Click it (or press **V**) to render that full PDF page in a high-resolution pop-up so you can see what the parser skipped over. The page text is overlaid as a selectable layer, so you can highlight and copy directly from the pop-up. Code blocks are outlined in the pop-up so you can find them at a glance.
 
 12. **Hold-to-Read, Rewind, and Progress:**
     * Hold the **Spacebar** to read and release to pause. On pause you get a progress readout (percent through the book plus the current page) and a render of the page you're on. Press the **Left Arrow** to jump back ~100 words.
 
 13. **One Page at a Time:**
     * Tick **One page at a time** to read the document page by page instead of straight through. Each page is read as a whole thought: playback starts at the beginning of the sentence sitting at the top of the page (backing into the previous page when that sentence started there) and runs to the end of the last sentence the page begins (carrying on into the next page to finish it). Reading stops on its own at the page boundary and the full page render pops up, ready to copy from or screenshot. Press **Space** again for the next page.
+
+14. **Web Pages Saved as PDF:**
+    * Standards, protocols, and API docs are often read as a web page printed to PDF. Those pages are one long sheet rather than a book page, so the page pop-up fits them to width and scrolls, and marks the line you had read up to — the equivalent of "where was I on this page". Monospace code blocks are detected, left out of the read-aloud text, and outlined in the pop-up instead.
 
 ### Appeal to Users:
 
@@ -97,6 +100,22 @@ Reading stops on its own when it reaches the end of the page, even if you're sti
 
 Sentence detection is heuristic — it deliberately treats an ambiguous period (abbreviations like `Mr.`, initials like `J.`, list numbers like `1.`, or a lowercase word following) as *not* ending a sentence. On a page with no sentence punctuation at all (a table, a poem), the search gives up after `MAX_SENTENCE_SCAN` words so a single page can't drag in half the document.
 
+### Reading web pages saved as PDF
+
+Standards, RFCs, and API documentation are often saved from the browser as a PDF. Two things are handled specially for those documents.
+
+**Where you are on the page.** The pop-up marks the line you had read up to with an orange band and scrolls it into view, so pausing on a long page shows you your place rather than just the page. A page taller than twice its width is treated as a web print-out: it is fitted to the window's *width* and the pop-up scrolls, instead of being shrunk whole to fit the window's height (which makes a long page unreadable). The backing canvas is capped at 16 megapixels so a very long page can't exceed the browser's canvas limits.
+
+In page-at-a-time mode a sentence is often borrowed across a page break, so the words being read may not physically sit on the page shown. When that happens the marker pins to the edge the reading ran off — the bottom of the page when it has carried on to the next, the top when it started on the previous one.
+
+**Code blocks.** Runs of monospace lines are treated as code: they're left out of the text you read, counted in the banner above the reader (`⌨️ 2 code blocks on this page`), and outlined in the page pop-up so you can find and copy them. Detection is font-based, using the family pdf.js reports for each text item:
+
+* A line counts as code when at least `codeMonoFrac` (default 60%) of its characters are in a monospace font, so an inline `foo()` inside a paragraph doesn't trip it.
+* If the *whole document* is monospace — a plain-text RFC, for instance — nothing is treated as code, since there is no code font to single out and the alternative would be dropping the entire document.
+* Set `dropCodeBlocks: false` in `PARSE_CONFIG` to read code blocks aloud again.
+
+One consequence worth knowing: a page consisting of nothing but code has no words left to read, so playback never lands on it and its banner never fires. The parse summary in the browser console reports these as `dropped.allCodePages`.
+
 ### Tuning the PDF parser
 
-PDF parsing is heuristic. If too much or too little is stripped for your documents, edit the `PARSE_CONFIG` object near the top of [`core.js`](core.js) — it toggles each filter (footnotes, headers/footers, TOC pages, captions, and front matter) and exposes the thresholds. The `skipFrontMatter` filter drops praise/blurb, title, copyright, dedication, and author-bio pages near the start so reading begins at the real content (e.g. the foreword/preface). The parser logs a summary of what it kept, dropped, and the page it started on to the browser console.
+PDF parsing is heuristic. If too much or too little is stripped for your documents, edit the `PARSE_CONFIG` object near the top of [`core.js`](core.js) — it toggles each filter (footnotes, headers/footers, TOC pages, captions, front matter, and code blocks) and exposes the thresholds. The `skipFrontMatter` filter drops praise/blurb, title, copyright, dedication, and author-bio pages near the start so reading begins at the real content (e.g. the foreword/preface). The parser logs a summary of what it kept, dropped, and the page it started on to the browser console.
