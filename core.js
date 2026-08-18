@@ -12,6 +12,13 @@ let pdfStatus;
 let imageBanner;
 let pauseInfo;
 let pageModeToggle;
+let progressDock;
+let progressPageLabel;
+let progressDetail;
+let progressPageFill;
+let progressDocFill;
+let progressDocTicks;
+let progressDocTrack;
 let isReading = false;
 var isPaused = false;
 var userInteracted = false;
@@ -28,6 +35,8 @@ let chunkStartWord = [];        // cumulative word index at the start of each ch
 let chunkY = [];                // PDF y of each chunk's first word (lightbox marker)
 let chunkLineHeight = [];       // font height of that line, for the marker's thickness
 let chunkSrcPages = [];         // page the chunk's words physically sit on
+let pageRuns = [];              // [{ page, startWord, endWord }] one run per page of playback
+let chunkRun = [];              // index into pageRuns for each chunk (O(1) progress lookup)
 let totalWords = 0;
 let numPages = 0;
 let pageImageCounts = {};       // { pageNum: imageCount }
@@ -376,6 +385,13 @@ document.addEventListener('DOMContentLoaded', (event) => {
   imageBanner = document.getElementById('imageBanner');
   pauseInfo = document.getElementById('pauseInfo');
   pageModeToggle = document.getElementById('pageMode');
+  progressDock = document.getElementById('progressDock');
+  progressPageLabel = document.getElementById('progressPage');
+  progressDetail = document.getElementById('progressDetail');
+  progressPageFill = document.getElementById('progressPageFill');
+  progressDocFill = document.getElementById('progressDocFill');
+  progressDocTicks = document.getElementById('progressDocTicks');
+  progressDocTrack = document.getElementById('progressDocTrack');
 
   if (!textInput || !speedSelector || !pauseSpeedSelector || !chunkSelector ||
       !fontSizeSelector || !fontFamilySelector || !startPauseButton || !textOutput) {
@@ -570,6 +586,8 @@ function rebuildChunks(words, breaks) {
   chunkY = [];
   chunkLineHeight = [];
   chunkSrcPages = [];
+  pageRuns = [];
+  chunkRun = [];
   let running = 0;
   for (const chunk of chunks) {
     const wordList = chunk.map((w) => w.text);
@@ -583,6 +601,19 @@ function rebuildChunks(words, breaks) {
     chunkY.push(first && first.y != null ? first.y : null);
     chunkLineHeight.push(first && first.h ? first.h : 0);
     chunkSrcPages.push(first ? (first.srcPage != null ? first.srcPage : first.page) : null);
+
+    // Track the word span of each page so the progress dock can show how far
+    // through the current page we are without searching per tick. In page mode
+    // these runs line up with the page segments; otherwise with the real pages.
+    const page = first ? first.page : null;
+    let run = pageRuns[pageRuns.length - 1];
+    if (!run || run.page !== page) {
+      run = { page, startWord: running, endWord: running };
+      pageRuns.push(run);
+    }
+    run.endWord = running + chunk.length;
+    chunkRun.push(pageRuns.length - 1);
+
     running += chunk.length;
   }
   totalWords = running;
@@ -601,6 +632,7 @@ function rebuildPlayback() {
     rebuildChunks(sourceWords, null);
     pageSegments = [];
   }
+  buildProgressTicks();
 }
 
 // Page mode is active only when we actually managed to cut the document into pages
@@ -619,6 +651,8 @@ function resetPosition() {
   lastBannerPage = null;
   if (startPauseButton) startPauseButton.textContent = 'GO!';
   hidePauseInfo();
+  setProgressReading(false);
+  showProgressDock(chunks.length > 0);
   if (chunks.length) {
     showChunk(0);
   } else {
@@ -1009,6 +1043,7 @@ function showChunk(index) {
   currentLineHeight = chunkLineHeight[index];
   currentSrcPage = chunkSrcPages[index];
   updatePageBanner(currentPage);
+  updateProgress(index);
 
   if (fontFamilySelector.value === 'Bionic') {
     displayBionicText(chunkWordLists[index]);
@@ -1050,6 +1085,7 @@ function startPlayback() {
   closeModal();
   isReading = true;
   isPaused = false;
+  setProgressReading(true);
   startPauseButton.textContent = 'Pause';
   stopTimer();
   nextWordTime = 0; // show the first chunk on the very next frame
@@ -1072,6 +1108,7 @@ function pause() {
   isPaused = true;
   spaceHeld = false;
   stopTimer();
+  setProgressReading(false);
   startPauseButton.textContent = 'Start';
   showPauseView();
 }
@@ -1079,6 +1116,7 @@ function pause() {
 function finishReading() {
   isReading = false;
   stopTimer();
+  setProgressReading(false);
   startPauseButton.textContent = 'GO!';
   currentChunkIndex = 0;
   currentWordIndex = 0;
@@ -1092,6 +1130,7 @@ function finishSegment() {
   isPaused = true;
   segmentComplete = true;
   stopTimer();
+  setProgressReading(false);
   startPauseButton.textContent = 'Next page';
   showPauseView();
 }
@@ -1179,6 +1218,103 @@ function hidePauseInfo() {
   if (pauseInfo) pauseInfo.style.display = 'none';
 }
 // END of playback
+//-------------------------------------
+
+//-------------------------------------
+// START of progress dock
+
+// Last values written to the dock. The reading loop calls updateProgress on every
+// chunk, so each field is only touched when it actually changed.
+let lastPageFillPct = -1;
+let lastDocFillPct = -1;
+let lastPageLabelText = null;
+let lastDetailText = null;
+
+function clamp01(value) {
+  if (!(value > 0)) return 0;   // also catches NaN
+  return value > 1 ? 1 : value;
+}
+
+function showProgressDock(show) {
+  if (!progressDock) return;
+  progressDock.hidden = !show;
+  document.body.classList.toggle('hasProgressDock', show);
+}
+
+// The travelling sheen runs only while words are actually moving
+function setProgressReading(reading) {
+  if (progressPageFill) progressPageFill.classList.toggle('isReading', reading);
+}
+
+// One tick per page boundary on the document track, so the bar reads as a map of
+// the document rather than a featureless line. Skipped when the pages are too
+// many to tell apart.
+function buildProgressTicks() {
+  lastPageFillPct = -1;
+  lastDocFillPct = -1;
+  lastPageLabelText = null;
+  lastDetailText = null;
+  if (!progressDocTicks) return;
+
+  // A single-page document (a web page printed to one long sheet) would show two
+  // identical bars, so the document track only appears once there is more than one page.
+  if (progressDocTrack) progressDocTrack.hidden = pageRuns.length < 2;
+
+  progressDocTicks.innerHTML = '';
+  if (!totalWords || pageRuns.length < 2 || pageRuns.length > 80) return;
+
+  for (let i = 1; i < pageRuns.length; i++) {
+    const tick = document.createElement('span');
+    tick.style.left = (pageRuns[i].startWord / totalWords) * 100 + '%';
+    progressDocTicks.appendChild(tick);
+  }
+}
+
+// Update the dock for the chunk just shown
+function updateProgress(index) {
+  if (!progressDock || !chunks[index]) return;
+
+  const wordsRead = chunkStartWord[index] + chunks[index].length;
+  const run = pageRuns[chunkRun[index]];
+  const docFrac = clamp01(totalWords ? wordsRead / totalWords : 0);
+  const runLength = run ? run.endWord - run.startWord : 0;
+  const pageFrac = runLength ? clamp01((wordsRead - run.startWord) / runLength) : docFrac;
+
+  // Tenth-of-a-percent resolution is finer than the bar can show, and keeps the
+  // style writes down to one per visible step.
+  const pagePct = Math.round(pageFrac * 1000) / 10;
+  if (pagePct !== lastPageFillPct) {
+    lastPageFillPct = pagePct;
+    if (progressPageFill) progressPageFill.style.width = pagePct + '%';
+  }
+  const docPct = Math.round(docFrac * 1000) / 10;
+  if (docPct !== lastDocFillPct) {
+    lastDocFillPct = docPct;
+    if (progressDocFill) progressDocFill.style.width = docPct + '%';
+  }
+
+  const page = run ? run.page : null;
+  const counts = `${wordsRead.toLocaleString()} / ${totalWords.toLocaleString()} words`;
+  let pageLabel;
+  let detail;
+  if (page != null) {
+    pageLabel = numPages ? `Page ${page} of ${numPages}` : `Page ${page}`;
+    detail = `${Math.round(pageFrac * 100)}% of page · ${counts}`;
+  } else {
+    pageLabel = 'Pasted text';
+    detail = `${Math.round(docFrac * 100)}% · ${counts}`;
+  }
+
+  if (pageLabel !== lastPageLabelText) {
+    lastPageLabelText = pageLabel;
+    if (progressPageLabel) progressPageLabel.textContent = pageLabel;
+  }
+  if (detail !== lastDetailText) {
+    lastDetailText = detail;
+    if (progressDetail) progressDetail.textContent = detail;
+  }
+}
+// END of progress dock
 //-------------------------------------
 
 //-------------------------------------

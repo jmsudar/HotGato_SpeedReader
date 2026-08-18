@@ -47,6 +47,9 @@ The speed reader is designed to assist users in rapidly reading and comprehendin
 14. **Web Pages Saved as PDF:**
     * Standards, protocols, and API docs are often read as a web page printed to PDF. Those pages are one long sheet rather than a book page, so the page pop-up fits them to width and scrolls, and marks the line you had read up to — the equivalent of "where was I on this page". Monospace code blocks are detected, left out of the read-aloud text, and outlined in the pop-up instead.
 
+15. **Progress Dock:**
+    * A bar fixed to the bottom of the window shows how far you are through the page you're on, how far through the whole document, and which page you're on (`Page 7 of 24`). It's built for the periphery — no clicks needed, and it never intercepts one.
+
 ### Appeal to Users:
 
 Given the rise in information consumption, tools like this speed reader become essential for many who are looking to consume vast amounts of text in shorter periods. The combination of user customization and smart text handling ensures an optimal and flexible reading experience. Whether someone is studying for an exam, going through a report, or just reading for leisure, this tool can enhance their efficiency and comprehension.
@@ -115,6 +118,17 @@ In page-at-a-time mode a sentence is often borrowed across a page break, so the 
 * Set `dropCodeBlocks: false` in `PARSE_CONFIG` to read code blocks aloud again.
 
 One consequence worth knowing: a page consisting of nothing but code has no words left to read, so playback never lands on it and its banner never fires. The parse summary in the browser console reports these as `dropped.allCodePages`.
+
+### The progress dock
+
+Reading word-by-word hides how far along you are, so a progress dock sits fixed at the bottom of the window:
+
+* **Page label** — `Page 7 of 24`, using the document's real page numbers.
+* **Thick bar** — progress through the page you're on. In page-at-a-time mode this tracks the page segment being read; otherwise it tracks the real page.
+* **Thin bar** — progress through the whole document, ticked once per page so it reads as a map rather than a featureless line. Ticks are dropped past 80 pages, where they'd be indistinguishable, and the whole thin bar is hidden for a single-page document, where it would just duplicate the thick one.
+* **Word count** — `1,203 / 5,400 words`, next to the page percentage.
+
+A sheen travels along the thick bar only while words are actually moving, so the dock also tells you at a glance whether the reader is running. The dock ignores pointer events (only the two bars take a hover, for their tooltips), so it can never swallow a click meant for the page behind it. Everything respects `prefers-reduced-motion`.
 
 ### Tuning the PDF parser
 
