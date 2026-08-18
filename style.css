@@ -449,16 +449,69 @@ label.toggleControl input[type="checkbox"] {
   background: rgba(80, 150, 255, 0.4);
 }
 
+/* Non-interactive overlay for reading position + code blocks, above the text
+   layer so it is visible but never blocks selecting or copying the page text. */
+.pdfPageWrap .pdfMarkLayer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Band showing the line the reader has reached on this page */
+.pdfReadMarker {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: rgba(247, 143, 76, 0.3);
+  border-top: 1px solid var(--atomic-tangerine);
+  border-bottom: 1px solid var(--atomic-tangerine);
+  border-left: 5px solid var(--atomic-tangerine);
+  box-sizing: border-box;
+}
+
+/* Outline around a code block that was skipped rather than read aloud */
+.pdfCodeBox {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px dashed #2A4B7C;
+  background: rgba(42, 75, 124, 0.08);
+  border-radius: 4px;
+}
+
+.pdfCodeBox::after {
+  content: 'code';
+  position: absolute;
+  top: -9px;
+  left: 6px;
+  padding: 0 5px;
+  border-radius: 3px;
+  background: #2A4B7C;
+  color: #fff;
+  font: 600 10px/1.5 sans-serif;
+  letter-spacing: 0.04em;
+}
+
+/* Sticky so it stays readable while scrolling a tall (web-print) page */
 .pdfModalCaption {
+  position: sticky;
+  bottom: 0;
   margin-top: 8px;
+  padding: 6px 0 2px;
+  background: #fff;
   color: var(--dark);
   font-weight: bold;
 }
 
+/* Fixed rather than absolute: the modal body scrolls, and the close button has
+   to stay reachable at the top of a long page. */
 .pdfModalClose {
-  position: absolute;
-  top: 8px;
-  right: 8px;
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 3;
   margin: 0;
   padding: 0.2em 0.6em;
   font-size: 1em;
